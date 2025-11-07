@@ -94,10 +94,10 @@ class Mix(nn.Module):
         out = fea1 * mix_factor.expand_as(fea1) + fea2 * (1 - mix_factor.expand_as(fea2))
         return out
 
-#Adaptive Fine-Grained Channel Attention (FCA)
-class CurveFCAttention(nn.Module):
+
+class CCA(nn.Module):
     def __init__(self,channel,b=1, gamma=2, n_curve=3):
-        super(CurveFCAttention, self).__init__()
+        super(CCA, self).__init__()
         self.avg_pool = nn.AdaptiveAvgPool2d(1)#全局平均池化
         #一维卷积
         t = int(abs((math.log(channel, 2) + b) / gamma))
@@ -218,18 +218,33 @@ class BasicBlock_E(nn.Module):
             out = self.reshape_conv(out)
         return out#[bs,2c,0.5h,0.5w]
 
+class MSFE(nn.Module):
+    def __init__(self, inchannel):
+        super(MSFE, self).__init__()
+        self.conv1 = nn.Sequential(nn.Conv2d(inchannel, inchannel, 1, stride=1, bias=False),
+                                   nn.BatchNorm2d(inchannel),
+                                   nn.ReLU(inplace=True))
+        self.conv2 = nn.Sequential(nn.Conv2d(inchannel, inchannel, 3, stride=1, padding=1, bias=False),
+                                   nn.BatchNorm2d(inchannel),
+                                   nn.ReLU(inplace=True))
+        self.conv3 = nn.Sequential(nn.Conv2d(inchannel, inchannel, 5, stride=1, padding=2, bias=False),
+                                   nn.BatchNorm2d(inchannel),
+                                   nn.ReLU(inplace=True))
+        self.conv4 = nn.Sequential(nn.Conv2d(inchannel, inchannel, 7, stride=1, padding=3, bias=False),
+                                   nn.BatchNorm2d(inchannel),
+                                   nn.ReLU(inplace=True))
+        self.convmix = nn.Sequential(nn.Conv2d(4 * inchannel, inchannel, 1, stride=1, bias=False),
+                                   nn.BatchNorm2d(inchannel),
+                                   nn.ReLU(inplace=True))
 
-from sizeMSGDC import MSGDC
-from sizeMSFF import MSFF3
 
-
-class BasicBlock_E_MSFF(nn.Module):
+class BasicBlock_E_MSFE(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size=3, mode=None, bias=True):
-        super(BasicBlock_E_MSFF, self).__init__()
+        super(BasicBlock_E_MSFE, self).__init__()
         self.mode = mode
 
         self.body1 = nn.Sequential(
-            MSFF3(inchannel=in_channels)
+            MSFE(inchannel=in_channels)
         )
         self.body2 = nn.Sequential(
             nn.Conv2d(in_channels, out_channels, kernel_size, padding=(kernel_size-1)//2, bias=bias),
@@ -247,15 +262,15 @@ class BasicBlock_E_MSFF(nn.Module):
         return out#[bs,2c,0.5h,0.5w]
 
 
-class BasicBlock_D_2ResMSFF(nn.Module):
+class BasicBlock_D_2ResMSFE(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size=3, mode=None, bias=True):
-        super(BasicBlock_D_2ResMSFF, self).__init__()
+        super(BasicBlock_D_2ResMSFE, self).__init__()
         self.mode = mode
         if mode == 'up':
             self.reshape_conv = ResidualUpSample(in_channels, out_channels)
 
         self.body1 = nn.Sequential(
-            MSFF3(inchannel=out_channels)
+            MSFE(inchannel=out_channels)
         )
         self.body2 = nn.Sequential(
             nn.Conv2d(out_channels, out_channels, kernel_size, padding=(kernel_size-1)//2, bias=bias),
@@ -281,54 +296,21 @@ class CPMLED(nn.Module):
                  ):
         super(CPMLED, self).__init__()
         [ch1, ch2, ch3, ch4] = channels
-        # codebook_params=np.array(codebook_params)
-        # self.codebook_scale=codebook_params[:,0]
-        # codebook_emb_num=codebook_params[:,1].astype(int)
-        # codebook_emb_dim = codebook_params[:, 2].astype(int)
-        # self.max_depth=int(np.log2(gt_resolution//self.codebook_scale[0]))
         self.connection = connection
-        # self.LQ_stage = LQ_stage
-        # self.scale_factor = scale_factor if LQ_stage else 1
-        # self.use_semantic_loss = use_semantic_loss
-        # if use_semantic_loss:
-        #     self.conv_semantic = nn.Sequential(
-        #         nn.Conv2d(ch4, 512, 1, 1, 0),
-        #         nn.ReLU(),
-        #     )
-        #     self.vgg_feat_layer = 'relu4_4'
-        #     self.vgg_feat_extractor = VGGFeatureExtractor([self.vgg_feat_layer])
-        # self.shallow_feature_extraction=nn.Conv2d(in_channels=3,out_channels=ch1,kernel_size=3, stride=1, padding=1)
         self.E_block0 = BasicBlock_E(3, ch1)
-        # self.Econv = nn.Conv2d(ch1,ch1*2,3,1,1)
         self.E_block1 = nn.Sequential(
-            # nn.Conv2d(3, ch1, 3, stride=1, padding=1),
             nn.PReLU(),
-            # BasicBlock_E_CGBDown(ch1,mode='down'),
             BasicBlock_E(ch1, ch1),
             BasicBlock_E(ch1, ch2, mode='down')
-            # Down_wt(ch1, ch2)
-        )
-
-        # self.E_block2 = BasicBlock_E(ch2, ch3, mode='down')
+            )
         self.E_block2 = nn.Sequential(BasicBlock_E(ch2, ch2),
-                                      BasicBlock_E(ch2, ch3, mode='down'),                                      )
-        # self.E_block2 = BasicBlock_E_CGBDown(ch2, mode='down')
-        # self.E_block3 = BasicBlock_E(ch3, ch4, mode='down')
+                                      BasicBlock_E(ch2, ch3, mode='down'))
         self.E_block3 = nn.Sequential(BasicBlock_E(ch3, ch3),
                                       BasicBlock_E(ch3, ch4, mode='down'))
-        # self.E_block3 = BasicBlock_E_CGBDown(ch3)
-        # self.E_block2 = Down_wt(ch2, ch3)
-        # self.E_block3 = Down_wt(ch3, ch4)
-
+        
         self.side_out = nn.Conv2d(ch4, 3, 3, stride=1, padding=1)
 
-        # self.M_block1 = BasicBlock_E(ch4, ch4)
-        # self.M_block2 = BasicBlock_E(ch4, ch4)
         self.M_block = PHA(ch4)
-
-        # self.fusion3 = SKFusion(dim=ch4, reduction=8)
-        # self.fusion2 = SKFusion(dim=ch3, reduction=8)
-        # self.fusion1 = SKFusion(dim=ch2, reduction=8)
 
         # dynamic filter
         ks_2d = 5
@@ -355,28 +337,28 @@ class CPMLED(nn.Module):
 
         # curve
         self.curve_n = 3
-        self.conv_1c = CurveFCAttention(ch2, self.curve_n)
-        self.conv_2c = CurveFCAttention(ch3, self.curve_n)
-        self.conv_3c = CurveFCAttention(ch4, self.curve_n)
+        self.conv_1c = CCA(ch2, self.curve_n)
+        self.conv_2c = CCA(ch3, self.curve_n)
+        self.conv_3c = CCA(ch4, self.curve_n)
         self.PPM1 = PPM(ch2, ch2 // 4, bins=(1, 2, 3, 6))
         self.PPM2 = PPM(ch3, ch3 // 4, bins=(1, 2, 3, 6))
         self.PPM3 = PPM(ch4, ch4 // 4, bins=(1, 2, 3, 6))
         # Decoder D
         # self.D_block3 = BasicBlock_D_2Res(ch4, ch4)
-        self.D_block3 = nn.Sequential(BasicBlock_D_2ResMSFF(ch4, ch4),
-                                      BasicBlock_E_MSFF(ch4, ch4))
+        self.D_block3 = nn.Sequential(BasicBlock_D_2ResMSFE(ch4, ch4),
+                                      BasicBlock_E_MSFE(ch4, ch4))
 
-        self.D_block2 = nn.Sequential(BasicBlock_D_2ResMSFF(ch4, ch3, mode='up'),
-                                      BasicBlock_E_MSFF(ch3, ch3))
+        self.D_block2 = nn.Sequential(BasicBlock_D_2ResMSFE(ch4, ch3, mode='up'),
+                                      BasicBlock_E_MSFE(ch3, ch3))
         # self.D_block1 = BasicBlock_D_2Res(ch3, ch2, mode='up')
-        self.D_block1 = nn.Sequential(BasicBlock_D_2ResMSFF(ch3, ch2, mode='up'),
-                                      BasicBlock_E_MSFF(ch2, ch2))
+        self.D_block1 = nn.Sequential(BasicBlock_D_2ResMSFE(ch3, ch2, mode='up'),
+                                      BasicBlock_E_MSFE(ch2, ch2))
         self.D_block0 = nn.Sequential(
-            BasicBlock_D_2ResMSFF(ch2, ch1, mode='up'),
-            BasicBlock_E_MSFF(ch1, ch1)
+            BasicBlock_D_2ResMSFE(ch2, ch1, mode='up'),
+            BasicBlock_E_MSFE(ch1, ch1)
             )
         # self.D_block=nn.Conv2d(ch1, 3, 3, stride=1, padding=1)
-        self.D_block = BasicBlock_E_MSFF(ch1, 3)
+        self.D_block = BasicBlock_E_MSFE(ch1, 3)
 
 
     def forward(self, x, side_loss=True):
