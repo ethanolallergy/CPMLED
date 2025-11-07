@@ -238,6 +238,19 @@ class MSFE(nn.Module):
                                    nn.ReLU(inplace=True))
 
 
+    def forward(self, x):
+
+        x1 = self.conv1(x)
+        x2 = self.conv2(x)
+        x3 = self.conv3(x)
+        x4 = self.conv4(x)
+
+        x_f = torch.cat([x1, x2, x3, x4], dim=1)
+        out = self.convmix(x_f)
+
+        return out
+
+
 class BasicBlock_E_MSFE(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size=3, mode=None, bias=True):
         super(BasicBlock_E_MSFE, self).__init__()
