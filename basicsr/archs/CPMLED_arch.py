@@ -43,15 +43,7 @@ class LocalAttention(nn.Module):
 
         return x * w * g  # (w + g) #self.gate(x, w)
 
-class PHA(nn.Module):
-    def __init__(self,in_ch):
-        super().__init__()
-        self.sa=PAM_Module(in_ch)
-        self.ca=LocalAttention(in_ch)
-        # self.pa=PixelAttention(in_ch)
-    def forward(self,x):
-        x=self.sa(x)+self.ca(x)+x
-        return x
+
 
 class PAM_Module(nn.Module):
     """空间注意力模块"""
@@ -79,6 +71,16 @@ class PAM_Module(nn.Module):
 
         out = self.gamma * out + x
         return out
+
+class PHA(nn.Module):
+    def __init__(self,in_ch):
+        super().__init__()
+        self.sa=PAM_Module(in_ch)
+        self.ca=LocalAttention(in_ch)
+        # self.pa=PixelAttention(in_ch)
+    def forward(self,x):
+        x=self.sa(x)+self.ca(x)+x
+        return x
 
 class Mix(nn.Module):
     def __init__(self, m=-0.80):
